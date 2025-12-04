@@ -13,16 +13,50 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # ----------------------------
+      # Checkout repo
+      # ----------------------------
       - name: Checkout repo
         uses: actions/checkout@v4
 
+      # ----------------------------
+      # Read incoming version
+      # ----------------------------
       - name: Read incoming version
         run: |
           echo "VERSION=${{ github.event.client_payload.version }}" >> $GITHUB_ENV
           echo "Incoming version: $VERSION"
 
       # ----------------------------
-      # Update composer.json version
+      # Read current local version
+      # ----------------------------
+      - name: Read local composer version
+        run: |
+          CURRENT=$(jq -r '.version' composer.json)
+          echo "CURRENT_VERSION=$CURRENT" >> $GITHUB_ENV
+          echo "Local version: $CURRENT | Incoming: $VERSION"
+
+      # ----------------------------
+      # Skip workflow if versions match
+      # ----------------------------
+      - name: Skip if no update needed
+        run: |
+          if [ "$VERSION" = "$CURRENT_VERSION" ]; then
+            echo "Versions match. No update required → stopping workflow."
+            exit 0
+          fi
+
+      # ----------------------------
+      # Create feature branch
+      # ----------------------------
+      - name: Create branch
+        run: |
+          BRANCH="sync-version-v$VERSION"
+          git checkout -b "$BRANCH"
+          echo "BRANCH=$BRANCH" >> $GITHUB_ENV
+
+      # ----------------------------
+      # Update composer.json
       # ----------------------------
       - name: Update composer.json
         run: |
@@ -32,24 +66,22 @@ jobs:
       # ----------------------------
       # Update CHANGELOG.md
       # ----------------------------
-      - name: Update Changelog
+      - name: Update CHANGELOG
         run: |
           TODAY=$(date +"%Y-%m-%d")
           printf "## [$VERSION] - $TODAY\n### Changed\n- Updated Froala WYSIWYG Editor to version $VERSION.\n\n$(cat CHANGELOG.md)" > CHANGELOG.md
 
       # ----------------------------
-      # Commit & Push changes
+      # Commit + Push
       # ----------------------------
       - name: Commit and push
         run: |
           git config user.email "actions@github.com"
           git config user.name "GitHub Actions Bot"
 
-          git checkout -b "sync-version-v$VERSION"
-
-          git add .
+          git add composer.json CHANGELOG.md
           git commit -m "chore: sync version to v$VERSION (auto-update)"
-          git push origin "sync-version-v$VERSION"
+          git push origin "$BRANCH"
 
       # ----------------------------
       # Create Pull Request
@@ -60,8 +92,12 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           title: "Sync version to v${{ env.VERSION }}"
           body: |
-            Auto-synced version update to **v${{ env.VERSION }}**.
-            - Updated composer.json
-            - Updated CHANGELOG.md
-          branch: "sync-version-v${{ env.VERSION }}"
+            Auto-synced update from **Main Repo**
+
+            **Updated:**
+            - composer.json
+            - CHANGELOG.md
+
+            **New Version:** v${{ env.VERSION }}
+          branch: ${{ env.BRANCH }}
           base: main
