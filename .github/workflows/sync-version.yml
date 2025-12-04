@@ -1,0 +1,67 @@
+name: Sync Version from Main Repo
+
+on:
+  repository_dispatch:
+    types: [sync-version]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Read incoming version
+        run: |
+          echo "VERSION=${{ github.event.client_payload.version }}" >> $GITHUB_ENV
+          echo "Incoming version: $VERSION"
+
+      # ----------------------------
+      # Update composer.json version
+      # ----------------------------
+      - name: Update composer.json
+        run: |
+          jq ".version = \"$VERSION\"" composer.json > composer_tmp.json
+          mv composer_tmp.json composer.json
+
+      # ----------------------------
+      # Update CHANGELOG.md
+      # ----------------------------
+      - name: Update Changelog
+        run: |
+          TODAY=$(date +"%Y-%m-%d")
+          printf "## [$VERSION] - $TODAY\n### Changed\n- Updated Froala WYSIWYG Editor to version $VERSION.\n\n$(cat CHANGELOG.md)" > CHANGELOG.md
+
+      # ----------------------------
+      # Commit & Push changes
+      # ----------------------------
+      - name: Commit and push
+        run: |
+          git config user.email "actions@github.com"
+          git config user.name "GitHub Actions Bot"
+
+          git checkout -b "sync-version-v$VERSION"
+
+          git add .
+          git commit -m "chore: sync version to v$VERSION (auto-update)"
+          git push origin "sync-version-v$VERSION"
+
+      # ----------------------------
+      # Create Pull Request
+      # ----------------------------
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v5
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          title: "Sync version to v${{ env.VERSION }}"
+          body: |
+            Auto-synced version update to **v${{ env.VERSION }}**.
+            - Updated composer.json
+            - Updated CHANGELOG.md
+          branch: "sync-version-v${{ env.VERSION }}"
+          base: main
