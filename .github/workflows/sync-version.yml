@@ -9,78 +9,72 @@ permissions:
   pull-requests: write
 
 jobs:
-  sync:
+  sync_version:
     runs-on: ubuntu-latest
 
     steps:
-      # ----------------------------
-      # Checkout repo
-      # ----------------------------
-      - name: Checkout repo
+      # -----------------------------
+      # Checkout repository
+      # -----------------------------
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      # ----------------------------
+      # -----------------------------
       # Read incoming version
-      # ----------------------------
-      - name: Read incoming version
+      # -----------------------------
+      - name: Set VERSION from dispatch event
         run: |
           echo "VERSION=${{ github.event.client_payload.version }}" >> $GITHUB_ENV
           echo "Incoming version: $VERSION"
 
-      # ----------------------------
-      # Read current local version
-      # ----------------------------
-      - name: Read local composer version
+      # -----------------------------
+      # Read local version from composer.json
+      # -----------------------------
+      - name: Read current version
+        id: local
         run: |
           CURRENT=$(jq -r '.version' composer.json)
           echo "CURRENT_VERSION=$CURRENT" >> $GITHUB_ENV
           echo "Local version: $CURRENT | Incoming: $VERSION"
 
-      # ----------------------------
-      # Skip workflow if versions match
-      # ----------------------------
-      - name: Skip if no update needed
+      # -----------------------------
+      # STOP JOB IF VERSION MATCHES
+      # -----------------------------
+      - name: Skip if version matches
         run: |
           if [ "$VERSION" = "$CURRENT_VERSION" ]; then
-            echo "Versions match. No update required → stopping workflow."
+            echo "✔ Versions match → No action required."
             exit 0
           fi
 
-      # ----------------------------
+      # -----------------------------
       # Create feature branch
-      # ----------------------------
-      - name: Create branch
+      # -----------------------------
+      - name: Create new branch
         run: |
-          BRANCH="sync-version-v$VERSION"
+          BRANCH="sync-version-v${VERSION}"
           git checkout -b "$BRANCH"
           echo "BRANCH=$BRANCH" >> $GITHUB_ENV
 
-      # ----------------------------
+      # -----------------------------
       # Update composer.json
-      # ----------------------------
+      # -----------------------------
       - name: Update composer.json
         run: |
-          jq ".version = \"$VERSION\"" composer.json > composer_tmp.json
-          mv composer_tmp.json composer.json
+          jq ".version = \"$VERSION\"" composer.json > tmp.json
+          mv tmp.json composer.json
 
-      # ----------------------------
-      # Update CHANGELOG.md
-      # ----------------------------
-      - name: Update CHANGELOG
+      # -----------------------------
+      # Commit and Push
+      # ADD "release: yes" as required
+      # -----------------------------
+      - name: Commit and Push
         run: |
-          TODAY=$(date +"%Y-%m-%d")
-          printf "## [$VERSION] - $TODAY\n### Changed\n- Updated Froala WYSIWYG Editor to version $VERSION.\n\n$(cat CHANGELOG.md)" > CHANGELOG.md
-
-      # ----------------------------
-      # Commit + Push
-      # ----------------------------
-      - name: Commit and push
-        run: |
-          git config user.email "actions@github.com"
           git config user.name "GitHub Actions Bot"
+          git config user.email "ci-bot@github.com"
 
-          git add composer.json CHANGELOG.md
-          git commit -m "chore: sync version to v$VERSION (auto-update)"
+          git add composer.json
+          git commit -m "chore: sync version to v${VERSION} (release: yes)"
           git push origin "$BRANCH"
 
       # ----------------------------
